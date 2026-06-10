@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tornado Chaser — Tornado Alley</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Consolas', 'Menlo', monospace; }
+    canvas { display: block; }
+    #panel {
+      position: fixed; top: 12px; right: 12px; width: 264px;
+      color: #9fe8a0; background: rgba(8, 14, 10, 0.84);
+      border: 1px solid #2e5c38; border-radius: 4px;
+      padding: 10px 12px; font-size: 12px; line-height: 1.55;
+      white-space: pre; pointer-events: none; z-index: 10;
+    }
+    #panel h2 { margin: 0 0 6px; font-size: 12px; color: #d8ffd9; letter-spacing: 1px; }
+    .radar-label {
+      position: fixed; color: #9fe8a0; font-size: 11px; letter-spacing: 1px;
+      background: rgba(0, 0, 0, 0.5); padding: 2px 6px; pointer-events: none; z-index: 10;
+    }
+    #label-refl { left: 12px; bottom: calc(28vh + 16px); }
+    #label-srv  { left: calc(30vh + 24px); bottom: calc(28vh + 16px); }
+    #hint {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      color: #cfd8c8; font-size: 12px; background: rgba(0, 0, 0, 0.45);
+      padding: 4px 10px; border-radius: 4px; pointer-events: none; z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="panel"><h2>ORDINATEUR DE BORD — MÉTÉO</h2><div id="panel-body">Initialisation…</div></div>
+  <div id="label-refl" class="radar-label">RÉFLECTIVITÉ (dBZ)</div>
+  <div id="label-srv" class="radar-label">VITESSE RADIALE (SRV)</div>
+  <div id="hint">Cliquer pour verrouiller la souris — ZQSD / WASD : conduire — la tourelle suit la souris</div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
