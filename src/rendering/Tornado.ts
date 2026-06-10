@@ -22,7 +22,7 @@ export class Tornado {
   private readonly dustMaterial: THREE.ShaderMaterial;
   private time = 0;
 
-  constructor(params: VortexParams, dustCount = 3500) {
+  constructor(params: VortexParams, dustCount = 6000) {
     // ── Cône : cylindre unité ouvert, profil recalculé en vertex shader ───
     const coneGeometry = new THREE.CylinderGeometry(1, 1, params.height, 128, 96, true);
     coneGeometry.translate(0, params.height / 2, 0);
@@ -33,9 +33,9 @@ export class Tornado {
       uniforms: {
         uTime: { value: 0 },
         uHeight: { value: params.height },
-        uBottomRadius: { value: params.coreRadius * 0.4 },
-        uTopRadius: { value: params.coreRadius * 3.3 },
-        uProfileExponent: { value: 2.4 },
+        uBottomRadius: { value: params.coreRadius * 0.75 },
+        uTopRadius: { value: params.coreRadius * 4.6 },
+        uProfileExponent: { value: 1.8 },
         uNoiseAmplitude: { value: 0.22 },
         uNoiseFrequency: { value: 1.9 },
         uRotationSpeed: { value: params.omega * 0.65 },
@@ -45,8 +45,8 @@ export class Tornado {
         uAmbientSky: { value: new THREE.Color(0.16, 0.20, 0.17) },
         uBaseColor: { value: new THREE.Color(0x0f1110) },       // pied : débris ultra-sombre
         uTopColor: { value: new THREE.Color(0x3a443c) },        // wall cloud, plus clair
-        uFogColor: { value: new THREE.Color(0x1a2421) },
-        uFogDensity: { value: 0.00055 },
+        uFogColor: { value: new THREE.Color(0x9aa890) },
+        uFogDensity: { value: 0.00028 },
         uOpacity: { value: 0.97 },
       },
       transparent: true,
@@ -75,9 +75,9 @@ export class Tornado {
         uOmega: { value: params.omega },
         uCoreRadius: { value: params.coreRadius },
         uHeight: { value: params.height },
-        uBottomRadius: { value: params.coreRadius * 0.4 },
-        uTopRadius: { value: params.coreRadius * 3.3 },
-        uProfileExponent: { value: 2.4 },
+        uBottomRadius: { value: params.coreRadius * 0.75 },
+        uTopRadius: { value: params.coreRadius * 4.6 },
+        uProfileExponent: { value: 1.8 },
         uPointSize: { value: 26 },
         uDustColor: { value: new THREE.Color(0.20, 0.18, 0.15) },
         uCondensationColor: { value: new THREE.Color(0.34, 0.37, 0.34) },

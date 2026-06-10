@@ -4,6 +4,7 @@ import { VortexField, EF4_PRESET } from './physics/VortexField';
 import { DebrisSystem, DestructibleBuilding, DestructionManager } from './physics/DestructionSystem';
 import { Tornado } from './rendering/Tornado';
 import { Rain } from './rendering/Rain';
+import { buildEnvironment } from './rendering/Environment';
 import { DopplerRadar } from './hud/DopplerRadar';
 
 // ───────────────────────── Renderer / scène ─────────────────────────────
@@ -12,42 +13,41 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.autoClear = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; // réponse cinématique des hautes lumières
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.25;
 document.body.appendChild(renderer.domElement);
 
-// Palette de supercellule : gris-vert lourd et menaçant. Le brouillard partage
-// EXACTEMENT cette couleur pour que l'horizon se fonde sans liseré visible.
-const SKY_COLOR = new THREE.Color(0x232d29);
-const FOG_COLOR = new THREE.Color(0x1a2421);
-const FOG_DENSITY = 0.00055;
+// Palette de supercellule : zénith sombre et menaçant, MAIS horizon lumineux
+// (la lumière fuse sous la base du nuage — le look iconique de Tornado Alley).
+// Le brouillard partage la couleur d'horizon → le sol se fond sans liseré.
+const HORIZON_COLOR = new THREE.Color(0x9aa890);
+const ZENITH_COLOR = new THREE.Color(0x2b332c);
+const FOG_COLOR = HORIZON_COLOR.clone();
+const FOG_DENSITY = 0.00028;
 
 const scene = new THREE.Scene();
-scene.background = SKY_COLOR.clone();
-// FogExp2 dense : la pluie torrentielle et la poussière mangent la visibilité ;
-// le vortex émerge progressivement de la brume au lieu d'apparaître d'un bloc.
+// Pas de scene.background : le dôme de ciel dégradé s'en charge (jeu de lumière).
 scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), FOG_DENSITY);
 
-// Éclairage bas et froid d'une base de supercellule (peu de lumière directe).
-const hemi = new THREE.HemisphereLight(0x3a4740, 0x14180f, 0.55);
+// Éclairage : ciel ↔ sol marqué + soleil bas en contre-jour, intensités relevées.
+const hemi = new THREE.HemisphereLight(0xb7c2ac, 0x33381f, 1.15);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffe2b0, 0.65);
-sun.position.set(-300, 220, -2000); // soleil bas, derrière la tornade → contre-jour
+const sun = new THREE.DirectionalLight(0xffe6bf, 1.25);
+sun.position.set(-600, 320, -1800); // soleil bas, derrière la tornade → contre-jour
 scene.add(sun);
+// Lumière d'appoint froide côté caméra pour décoller les volumes de l'ombre.
+const fill = new THREE.DirectionalLight(0x8fa6b8, 0.4);
+fill.position.set(400, 220, 800);
+scene.add(fill);
 const sunDirection = sun.position.clone().normalize();
 const baseHemiIntensity = hemi.intensity;
 const baseSunIntensity = sun.intensity;
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(8000, 8000),
-  new THREE.MeshLambertMaterial({ color: 0x2c3322 }),
-);
-ground.rotation.x = -Math.PI / 2;
-scene.add(ground);
+buildEnvironment(scene, { horizon: HORIZON_COLOR, zenith: ZENITH_COLOR });
 
 // Plafond nuageux sombre de la supercellule (ancre visuelle du sommet du cône).
 const ceiling = new THREE.Mesh(
   new THREE.CircleGeometry(2400, 48),
-  new THREE.MeshBasicMaterial({ color: 0x161b17, transparent: true, opacity: 0.96 }),
+  new THREE.MeshBasicMaterial({ color: 0x22271f, transparent: true, opacity: 0.9, fog: false }),
 );
 ceiling.rotation.x = Math.PI / 2;
 ceiling.position.y = EF4_PRESET.height * 0.98;
@@ -58,9 +58,9 @@ scene.add(ceiling);
 const wallCloud = new THREE.Mesh(
   new THREE.CylinderGeometry(1400, 1900, 420, 64, 1, true),
   new THREE.MeshBasicMaterial({
-    color: 0x10130f,
+    color: 0x1c211a,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.8,
     side: THREE.BackSide,
     fog: true,
   }),
@@ -70,7 +70,7 @@ scene.add(wallCloud);
 
 // ───────────────────────── Simulation ───────────────────────────────────
 const vortex = new VortexField(EF4_PRESET);
-vortex.center.set(-150, -900);
+vortex.center.set(-110, -620);
 
 const tornado = new Tornado(EF4_PRESET);
 scene.add(tornado.group);
@@ -118,6 +118,8 @@ const keys = new Set<string>();
 window.addEventListener('keydown', (e) => keys.add(e.code));
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 
+let shakeClock = 0; // horloge dédiée au tremblement doux de la caméra
+
 const _forward = new THREE.Vector3();
 const _windForce = new THREE.Vector3();
 const _vehicleVelocity = new THREE.Vector3();
@@ -127,6 +129,7 @@ const _toVortex = new THREE.Vector3();
 const _camWind = new THREE.Vector2();
 
 function updateVehicle(dt: number) {
+  shakeClock += dt;
   const accelInput =
     (keys.has('KeyW') || keys.has('KeyZ') ? 1 : 0) - (keys.has('KeyS') ? 0.7 : 0);
   const steerInput =
@@ -152,25 +155,23 @@ function updateVehicle(dt: number) {
   vehicle.position.addScaledVector(_forward, vehicle.speed * dt);
   vehicle.position.addScaledVector(vehicle.windDrift, dt);
 
-  // Caméra tourelle : posée sur le toit, secouée par les rafales.
+  // Caméra tourelle : posée sur le toit.
   camera.position.set(vehicle.position.x, TURRET_HEIGHT, vehicle.position.z);
   vortex.getWindVelocity(_probe, _localWind);
-  const gust = _localWind.length();
 
-  // Tremblement combiné : rafales locales + proximité du vortex. L'intensité
-  // explose quand le pied de la tornade fond sur le véhicule (< ~400 m).
+  // Tremblement DOUX (sommes de sinus, pas de bruit blanc par frame → pas de
+  // nausée) : translation seulement, pas de roulis. L'amplitude monte près du
+  // vortex mais reste plafonnée et lente.
   const dxV = vortex.center.x - vehicle.position.x;
   const dzV = vortex.center.y - vehicle.position.z;
   const distVortex = Math.hypot(dxV, dzV);
-  const proximity = THREE.MathUtils.clamp(1 - distVortex / 700, 0, 1);
-  const gustShake = Math.max(gust - 22, 0) * 0.0045;
-  const shake = gustShake + proximity * proximity * 0.22;
-  if (shake > 0.0001) {
-    camera.position.x += (Math.random() - 0.5) * shake;
-    camera.position.y += (Math.random() - 0.5) * shake;
-    camera.position.z += (Math.random() - 0.5) * shake;
-    // Léger roulis de châssis sous les rafales latérales.
-    camera.rotation.z += (Math.random() - 0.5) * shake * 0.04;
+  const proximity = THREE.MathUtils.clamp(1 - distVortex / 550, 0, 1);
+  const amp = proximity * proximity * 0.09; // mètres, doux
+  if (amp > 0.0005) {
+    const t = shakeClock;
+    camera.position.x += (Math.sin(t * 8.3) * 0.6 + Math.sin(t * 4.1) * 0.4) * amp;
+    camera.position.y += Math.sin(t * 6.7) * 0.5 * amp;
+    camera.position.z += (Math.sin(t * 7.1) * 0.6 + Math.sin(t * 3.3) * 0.4) * amp;
   }
 
   // Vent horizontal local — sert à incliner la pluie autour du joueur.
@@ -267,17 +268,16 @@ let flash = 0;
 function updateLightning(dt: number) {
   lightningTimer -= dt;
   if (lightningTimer <= 0) {
-    flash = 0.6 + Math.random() * 0.4;            // pic d'intensité
-    lightningTimer = 3 + Math.random() * 9;        // prochain éclair
+    flash = 0.5 + Math.random() * 0.4;            // pic d'intensité
+    lightningTimer = 5 + Math.random() * 11;       // prochain éclair (plus espacé)
   }
-  flash = Math.max(0, flash - dt * 3.5);           // extinction rapide
+  flash = Math.max(0, flash - dt * 3.0);           // extinction rapide
   // Double-flash occasionnel (recharge de leader).
-  if (flash > 0.3 && Math.random() < 0.04) flash = Math.min(1, flash + 0.5);
+  if (flash > 0.3 && Math.random() < 0.03) flash = Math.min(1, flash + 0.4);
 
-  hemi.intensity = baseHemiIntensity + flash * 2.2;
-  sun.intensity = baseSunIntensity + flash * 1.4;
-  scene.background = (scene.background as THREE.Color)
-    .copy(SKY_COLOR).lerp(new THREE.Color(0xb9c4cf), flash * 0.6);
+  // Embrasement bref des lumières — pas de flash plein écran agressif.
+  hemi.intensity = baseHemiIntensity + flash * 1.3;
+  sun.intensity = baseSunIntensity + flash * 1.0;
 }
 
 // ───────────────────────── Boucle principale ────────────────────────────
@@ -294,7 +294,6 @@ function animate() {
   tornado.update(dt, vortex, sunDirection);
   destruction.update(vortex, debris, 4);
   debris.update(dt, vortex);
-  camera.rotation.z = 0; // reset du roulis avant ré-application du shake
   updateVehicle(dt);
   rain.update(dt, camera.position, _camWind);
   updateLightning(dt);
