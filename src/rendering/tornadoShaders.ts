@@ -151,7 +151,10 @@ export const TORNADO_FRAGMENT_SHADER = /* glsl */ `
 uniform vec3 uSunDirection;   // direction normalisée VERS le soleil (monde)
 uniform vec3 uSunColor;
 uniform vec3 uAmbientSky;     // ambiance vert-gris supercellulaire
-uniform vec3 uDustColor;      // teinte de la paroi (poussière + condensation)
+uniform vec3 uBaseColor;      // pied du cône : poussière/débris, ultra-sombre (#0f1110)
+uniform vec3 uTopColor;       // sommet : wall cloud plus clair, translucide
+uniform vec3 uFogColor;       // couleur du brouillard pour le fondu d'horizon
+uniform float uFogDensity;    // FogExp2 — doit matcher la scène
 uniform float uOpacity;
 
 varying vec3 vWorldPosition;
@@ -167,26 +170,43 @@ void main() {
   float rim = 1.0 - abs(dot(N, V));
   float thickness = 1.0 - rim;
 
+  // ── Fresnel : les bords rasants de la paroi diffusent/transmettent plus ──
+  float fresnel = pow(rim, 2.2);
+
   // ── Forward scattering : lumière du soleil traversant les bords fins ────
   // -uSunDirection = direction de propagation des rayons ; le pic de diffusion
   // avant survient quand cette propagation continue vers l'œil (alignée sur V).
   float phase = pow(max(dot(V, -uSunDirection), 0.0), 6.0);
-  vec3 scatter = uSunColor * phase * rim * rim * 1.6;
+  vec3 scatter = uSunColor * phase * fresnel * 2.1;
+
+  // ── Gradient vertical : pied saturé de débris (sombre), sommet wall cloud ─
+  // courbe biaisée vers le bas pour garder une base lourde et menaçante.
+  float grad = pow(vHeight01, 0.65);
+  vec3 wallColor = mix(uBaseColor, uTopColor, grad);
 
   // ── Assombrissement du cœur : auto-occultation de la lumière du ciel ────
-  float occlusion = mix(1.0, 0.12, thickness);
-  occlusion *= mix(0.35, 1.0, vHeight01); // base chargée de débris = plus sombre
+  float occlusion = mix(1.0, 0.10, thickness);
+  occlusion *= mix(0.22, 1.0, vHeight01); // base chargée de débris = plus sombre
   vec3 ambient = uAmbientSky * occlusion;
 
-  // Diffus enveloppant (wrap) côté soleil.
+  // Diffus enveloppant (wrap) côté soleil — très atténué sous la supercellule.
   float wrap = clamp((dot(N, uSunDirection) + 0.6) / 1.6, 0.0, 1.0);
-  vec3 diffuse = uSunColor * wrap * 0.22;
+  vec3 diffuse = uSunColor * wrap * 0.16;
 
-  vec3 color = uDustColor * (ambient + diffuse) + scatter;
-  color *= 0.92 + 0.10 * vTurbulence; // micro-variations de densité de la paroi
+  vec3 color = wallColor * (ambient + diffuse) + scatter;
+  // Liseré de condensation translucide sur les bords (forward scattering froid).
+  color += uTopColor * fresnel * mix(0.05, 0.35, vHeight01);
+  color *= 0.88 + 0.14 * vTurbulence; // micro-variations de densité de la paroi
 
-  float alpha = uOpacity * (0.5 + 0.5 * thickness);
-  alpha *= clamp(0.8 + 0.3 * vTurbulence, 0.0, 1.0);
+  // Fondu atmosphérique : la base émerge du brouillard (FogExp2 manuel).
+  float dist = length(cameraPosition - vWorldPosition);
+  float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+  color = mix(color, uFogColor, clamp(fogFactor, 0.0, 1.0));
+
+  float alpha = uOpacity * (0.55 + 0.45 * thickness);
+  alpha *= clamp(0.75 + 0.35 * vTurbulence, 0.0, 1.0);
+  alpha *= mix(0.85, 1.0, vHeight01);            // pied légèrement diffus dans la brume
+  alpha = mix(alpha, alpha * 0.4, fogFactor);    // disparaît dans le brouillard lointain
 
   gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
 }
